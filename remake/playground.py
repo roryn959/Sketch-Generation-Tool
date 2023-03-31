@@ -127,8 +127,8 @@ def decode(z_input=None, draw_mode=True, temperature=0.1, factor=0.2):
 
 if __name__ == "__main__":
     tf.compat.v1.disable_v2_behavior()
-    data_dir = 'http://github.com/hardmaru/sketch-rnn-datasets/raw/master/aaron_sheep/'
-    model_dir = '/tmp/sketch_rnn/models/aaron_sheep/lstm'
+    data_dir = 'http://github.com/hardmaru/sketch-rnn-datasets/raw/master/aaron_sheep'
+    model_dir = 'saved_model'
     [train_set, valid_set, test_set, hps_model, eval_hps_model, sample_hps_model] = load_env_compatible(data_dir, model_dir)
     myModel = model.Model(hps_model)
     eval_model = model.Model(eval_hps_model, reuse=True)
@@ -136,5 +136,5 @@ if __name__ == "__main__":
     sess = tf.compat.v1.InteractiveSession()
     sess.run(tf.compat.v1.global_variables_initializer())
     sketch_rnn_train.load_checkpoint(sess, model_dir)
-    strokes = test_set.random_sample()
+    strokes, params = model.sample(sess, sample_model)
     draw_strokes(strokes)

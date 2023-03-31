@@ -125,7 +125,7 @@ def load_dataset(data_dir, model_params, inference_mode=False):
     if data_dir.startswith('http://') or data_dir.startswith('https://'):
       data_filepath = '/'.join([data_dir, dataset])
       tf.compat.v1.logging.info('Downloading %s', data_filepath)
-      response = requests.get(data_filepath)
+      response = requests.get(data_filepath, allow_redirects=True)
       data = np.load(BytesIO(response.content), allow_pickle=True, encoding='latin1')
     else:
       data_filepath = os.path.join(data_dir, dataset)
@@ -448,7 +448,7 @@ def trainer(model_params):
   tf.compat.v1.gfile.MakeDirs(FLAGS.log_root)
   with tf.compat.v1.gfile.Open(
       os.path.join(FLAGS.log_root, 'model_config.json'), 'w') as f:
-    json.dump(list(model_params.values()), f, indent=True)
+    json.dump(model_params.values(), f, indent=True)
 
   train(sess, model, eval_model, train_set, valid_set, test_set)
 
