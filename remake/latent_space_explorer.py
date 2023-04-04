@@ -10,9 +10,8 @@ import utils
 import sketch_rnn_train
 import model
 
-tf.compat.v1.disable_v2_behavior()
 EPSILON = 0.1
-MODEL_DIR = '/tmp/sketch_rnn/models/flamingo/lstm_uncond'
+MODEL_DIR = '/tmp/sketch_rnn/models/owl/lstm'
 
 
 class DataUtilities:
@@ -47,7 +46,7 @@ class DataUtilities:
         new_sketch = []
         for stroke in sketch:
             new_sketch.append([stroke[0]/sdx, stroke[1]/sdy, stroke[2]])
-        
+
         return new_sketch
 
     @staticmethod
@@ -163,7 +162,7 @@ class ModelFactory:
         self.__encode_model, self.__decode_model = self.__load_model(MODEL_DIR)
         self.__session = tf.compat.v1.InteractiveSession()
         self.__session.run(tf.compat.v1.global_variables_initializer())
-        sketch_rnn_train.load_checkpoint(self.__session, MODEL_DIR)
+        self.__load_checkpoint(self.__session, MODEL_DIR)
 
     def getSession(self):
         return self.__session
@@ -173,6 +172,11 @@ class ModelFactory:
 
     def getDecodeModel(self):
         return self.__decode_model
+
+    def __load_checkpoint(self, sess, checkpoint_path):
+        saver = tf.compat.v1.train.Saver(tf.compat.v1.global_variables())
+        ckpt = tf.compat.v1.train.get_checkpoint_state(checkpoint_path)
+        saver.restore(sess, ckpt.model_checkpoint_path)
 
     def __load_model(self, model_dir):
         # Code modified from: https://github.com/magenta/magenta-demos/blob/main/jupyter-notebooks/Sketch_RNN.ipynb
@@ -208,6 +212,8 @@ class ModelFactory:
         decode_model_params = model.copy_hparams(encode_model_params)
         decode_model_params.max_seq_len = 1
 
+        sketch_rnn_train.reset_graph()
+
         encode_model = model.Model(
             encode_model_params,
             reuse=tf.compat.v1.AUTO_REUSE
@@ -230,10 +236,11 @@ class ModelHandler:
 
     def toLatent(self, sketch):
         # *** Following casts are unnecessary!
-        sketch = np.array(sketch)
+        sketch = np.array(sketch, dtype=np.float32)
         strokes = utils.to_big_strokes(
             sketch,
-            max_len=self.__modelFactory.getEncodeModel().hps.max_seq_len).tolist()
+            max_len=self.__modelFactory.getEncodeModel().hps.max_seq_len
+            ).tolist()
 
         # *** Consider adapting conversion method instead ***
         strokes.insert(0, [0, 0, 1, 0, 0])
@@ -293,9 +300,10 @@ class ExploreWindow:
     def __init__(self, model_handler, z):
         # Erroneous attributes
         self.__z = z
-        print(z)
+        self.__deviation = 0.5
+        self.__deviateLatents()
         self.__model_handler = model_handler
-        self.__padding = 5
+        self.__padding = 15
 
         # Main window properties
         self.__root = tk.Tk()
@@ -357,21 +365,31 @@ class ExploreWindow:
         for i in range(3):
             for j in range(3):
                 self.__canvases[i*3+j].grid(row=i, column=j, sticky='nesw')
+                self.__canvases[i*3+j].bind('<Button-1>', lambda event, i=i, j=j: self.__selectCanvas(i*3+j))
+
+    def __selectCanvas(self, position):
+        print(f'canvas {position} selected')
+        self.__z = self.__zs[position]
+        self.__updateSketches()
 
     def __drawSketch(self, sketch, canvas_index):
         canvas = self.__canvases[canvas_index]
+        print(f'clearing canvas {canvas_index}')
+        canvas.delete('all')
+        input()
+        canvas_width = canvas.winfo_reqwidth()-self.__padding
+        canvas_height = canvas.winfo_reqheight()-self.__padding
         min_x, max_x, min_y, max_y = DataUtilities.get_bounds(sketch, factor=1)
-        canvas_width = canvas.winfo_reqwidth()
-        canvas_height = canvas.winfo_reqheight()
-        dims = (self.__padding + max_x - min_x, self.__padding + max_y - min_y)
-        x_factor = canvas_width/dims[0]
-        y_factor = canvas_height/dims[1]
-        cursor = (self.__padding*x_factor, self.__padding*y_factor)
+        sketch_width = max_x-min_x
+        sketch_height = max_y-min_y
+        w_factor = canvas_width/(sketch_width*2)
+        h_factor = canvas_height/(sketch_height*2)
+        cursor = (canvas_width/2, canvas_height/2)
         pen_up = 1
         for stroke in sketch:
             new_cursor = (
-                cursor[0]+stroke[0]*x_factor,
-                cursor[1]+stroke[1]*y_factor
+                cursor[0]+(stroke[0]*w_factor),
+                cursor[1]+(stroke[1]*h_factor)
             )
             if not pen_up:
                 canvas.create_line(
@@ -384,20 +402,21 @@ class ExploreWindow:
             pen_up = stroke[2]
 
     def __updateSketches(self):
-        zs = []
-        for i in range(9):
-            zs.append(self.__z)
-
         sketches = []
-        for z in zs:
-            sketch = self.__model_handler.fromLatent(self.__z)
+        for z in self.__zs:
+            sketch = self.__model_handler.fromLatent([z])
             sketch = utils.to_normal_strokes(sketch)
             sketches.append(sketch)
 
-        DataUtilities.strokes_to_svg(sketches[0])
-
         for i in range(9):
             self.__drawSketch(sketches[i], canvas_index=i)
+
+    def __deviateLatents(self):
+        z = self.__z[0]
+        self.__zs = []
+        for i in range(9):
+            dev = np.random.normal(scale=self.__deviation, size=z.shape)
+            self.__zs.append(z + dev)
 
 
 class Sketch_Window:
@@ -509,7 +528,7 @@ class Sketch_Window:
         )
         simplified_sketch_strokes = DataUtilities.convertPointsToStrokes(
             simplified_sketch_points,
-            factor=1
+            factor=10
         )
 
         sketch = DataUtilities.normalise(simplified_sketch_strokes)
@@ -523,4 +542,175 @@ class Sketch_Window:
 
 
 if __name__ == '__main__':
+    tf.compat.v1.disable_v2_behavior()
     sketch_window = Sketch_Window()
+
+    # np.set_printoptions(precision=8, edgeitems=6, linewidth=200, suppress=True)
+    # tf.compat.v1.disable_v2_behavior()
+
+    # data_dir = 'http://github.com/hardmaru/sketch-rnn-datasets/raw/master/aaron_sheep/'
+    # models_root_dir = '/tmp/sketch_rnn/models'
+    # model_dir = '/tmp/sketch_rnn/models/aaron_sheep/layer_norm'
+    # sketch_rnn_train.download_pretrained_models(models_root_dir=models_root_dir)
+
+    # def load_env_compatible(data_dir, model_dir):
+    #     """Loads environment for inference mode, used in jupyter notebook."""
+    #     # modified https://github.com/tensorflow/magenta/blob/master/magenta/models/sketch_rnn/sketch_rnn_train.py
+    #     # to work with depreciated tf.HParams functionality
+    #     model_params = model.get_default_hparams()
+    #     with tf.compat.v1.gfile.Open(os.path.join(model_dir, 'model_config.json'), 'r') as f:
+    #         data = json.load(f)
+    #     fix_list = ['conditional', 'is_training', 'use_input_dropout', 'use_output_dropout', 'use_recurrent_dropout']
+    #     for fix in fix_list:
+    #         data[fix] = (data[fix] == 1)
+    #     model_params.parse_json(json.dumps(data))
+    #     return sketch_rnn_train.load_dataset(data_dir, model_params, inference_mode=True)
+
+    # def load_model_compatible(model_dir):
+    #     """Loads model for inference mode, used in jupyter notebook."""
+    #     # modified https://github.com/tensorflow/magenta/blob/master/magenta/models/sketch_rnn/sketch_rnn_train.py
+    #     # to work with depreciated tf.HParams functionality
+    #     model_params = model.get_default_hparams()
+    #     with tf.compat.v1.gfile.Open(os.path.join(model_dir, 'model_config.json'), 'r') as f:
+    #         data = json.load(f)
+    #     fix_list = ['conditional', 'is_training', 'use_input_dropout', 'use_output_dropout', 'use_recurrent_dropout']
+    #     for fix in fix_list:
+    #         data[fix] = (data[fix] == 1)
+    #     model_params.parse_json(json.dumps(data))
+    #     model_params.batch_size = 1  # only sample one at a time
+    #     eval_model_params = model.copy_hparams(model_params)
+    #     eval_model_params.use_input_dropout = 0
+    #     eval_model_params.use_recurrent_dropout = 0
+    #     eval_model_params.use_output_dropout = 0
+    #     eval_model_params.is_training = 0
+    #     sample_model_params = model.copy_hparams(eval_model_params)
+    #     sample_model_params.max_seq_len = 1  # sample one point at a time
+    #     return [model_params, eval_model_params, sample_model_params]
+
+    # def load_dataset(data_dir, model_params, inference_mode=False):
+        # """Loads the .npz file, and splits the set into train/valid/test."""
+
+        # # normalizes the x and y columns using the training set.
+        # # applies same scaling factor to valid and test set.
+
+        # if isinstance(model_params.data_set, list):
+        #     datasets = model_params.data_set
+        # else:
+        #     datasets = [model_params.data_set]
+
+        # train_strokes = None
+        # valid_strokes = None
+        # test_strokes = None
+
+        # for dataset in datasets:
+        #     if data_dir.startswith('http://') or data_dir.startswith('https://'):
+        #     data_filepath = '/'.join([data_dir, dataset])
+        #     tf.compat.v1.logging.info('Downloading %s', data_filepath)
+        #     response = requests.get(data_filepath, allow_redirects=True)
+        #     data = np.load(BytesIO(response.content), allow_pickle=True, encoding='latin1')
+        #     else:
+        #     data_filepath = os.path.join(data_dir, dataset)
+        #     data = np.load(data_filepath, encoding='latin1', allow_pickle=True)
+        #     tf.compat.v1.logging.info('Loaded {}/{}/{} from {}'.format(
+        #         len(data['train']), len(data['valid']), len(data['test']),
+        #         dataset))
+        #     if train_strokes is None:
+        #     train_strokes = data['train']
+        #     valid_strokes = data['valid']
+        #     test_strokes = data['test']
+        #     else:
+        #     train_strokes = np.concatenate((train_strokes, data['train']))
+        #     valid_strokes = np.concatenate((valid_strokes, data['valid']))
+        #     test_strokes = np.concatenate((test_strokes, data['test']))
+
+        # all_strokes = np.concatenate((train_strokes, valid_strokes, test_strokes))
+        # num_points = 0
+        # for stroke in all_strokes:
+        #     num_points += len(stroke)
+        # avg_len = num_points / len(all_strokes)
+        # tf.compat.v1.logging.info('Dataset combined: {} ({}/{}/{}), avg len {}'.format(
+        #     len(all_strokes), len(train_strokes), len(valid_strokes),
+        #     len(test_strokes), int(avg_len)))
+
+        # # calculate the max strokes we need.
+        # max_seq_len = utils.get_max_len(all_strokes)
+        # # overwrite the hps with this calculation.
+        # model_params.max_seq_len = max_seq_len
+
+        # tf.compat.v1.logging.info('model_params.max_seq_len %i.', model_params.max_seq_len)
+
+        # eval_model_params = sketch_rnn_model.copy_hparams(model_params)
+
+        # eval_model_params.use_input_dropout = 0
+        # eval_model_params.use_recurrent_dropout = 0
+        # eval_model_params.use_output_dropout = 0
+        # eval_model_params.is_training = 1
+
+        # if inference_mode:
+        #     eval_model_params.batch_size = 1
+        #     eval_model_params.is_training = 0
+
+        # sample_model_params = sketch_rnn_model.copy_hparams(eval_model_params)
+        # sample_model_params.batch_size = 1  # only sample one at a time
+        # sample_model_params.max_seq_len = 1  # sample one point at a time
+
+        # train_set = utils.DataLoader(
+        #     train_strokes,
+        #     model_params.batch_size,
+        #     max_seq_length=model_params.max_seq_len,
+        #     random_scale_factor=model_params.random_scale_factor,
+        #     augment_stroke_prob=model_params.augment_stroke_prob)
+
+        # normalizing_scale_factor = train_set.calculate_normalizing_scale_factor()
+        # train_set.normalize(normalizing_scale_factor)
+
+        # valid_set = utils.DataLoader(
+        #     valid_strokes,
+        #     eval_model_params.batch_size,
+        #     max_seq_length=eval_model_params.max_seq_len,
+        #     random_scale_factor=0.0,
+        #     augment_stroke_prob=0.0)
+        # valid_set.normalize(normalizing_scale_factor)
+
+        # test_set = utils.DataLoader(
+        #     test_strokes,
+        #     eval_model_params.batch_size,
+        #     max_seq_length=eval_model_params.max_seq_len,
+        #     random_scale_factor=0.0,
+        #     augment_stroke_prob=0.0)
+        # test_set.normalize(normalizing_scale_factor)
+
+        # tf.compat.v1.logging.info('normalizing_scale_factor %4.4f.', normalizing_scale_factor)
+
+        # result = [
+        #     train_set, valid_set, test_set, model_params, eval_model_params,
+        #     sample_model_params
+        # ]
+        # return result
+    
+    # [train_set, valid_set, test_set, hps_model, eval_hps_model, sample_hps_model] = load_env_compatible(data_dir, model_dir)
+    # sketch_rnn_train.reset_graph()
+    # myModel = model.Model(hps_model)
+    # eval_model = model.Model(eval_hps_model, reuse=True)
+    # sample_model = model.Model(sample_hps_model, reuse=True)
+    # sess = tf.compat.v1.InteractiveSession()
+    # sess.run(tf.compat.v1.global_variables_initializer())
+    # sketch_rnn_train.load_checkpoint(sess, model_dir)
+
+    # def encode(input_strokes):
+    #     strokes = utils.to_big_strokes(input_strokes).tolist()
+    #     strokes.insert(0, [0, 0, 1, 0, 0])
+    #     seq_len = [len(input_strokes)]
+    #     return sess.run(eval_model.batch_z, feed_dict={eval_model.input_data: [strokes], eval_model.sequence_lengths: seq_len})[0]
+
+    # def decode(z_input=None, draw_mode=True, temperature=0.1, factor=0.2):
+    #     z = None
+    #     if z_input is not None:
+    #         z = [z_input]
+    #     sample_strokes, m = model.sample(sess, sample_model, seq_len=eval_model.hps.max_seq_len, temperature=temperature, z=z)
+    #     strokes = utils.to_normal_strokes(sample_strokes)
+    #     return strokes
+
+    # stroke = test_set.random_sample()
+    # z = encode(stroke)
+    # print(z)
