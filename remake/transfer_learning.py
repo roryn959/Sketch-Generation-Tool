@@ -9,7 +9,6 @@ import requests
 
 import sketch_rnn_train
 import model as sketch_rnn_model
-import latent_space_explorer
 import utils
 
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
@@ -166,7 +165,7 @@ def load_dataset(data_dir, model_params, inference_mode=False):
     return result
 
 
-def train(sess, model, eval_model, train_set, valid_set, test_set):
+def train(sess, model, train_set, valid_set):
     """Train a sketch-rnn model."""
     # Setup summary writer.
     summary_writer = tf.compat.v1.summary.FileWriter(FLAGS.log_root)
@@ -256,6 +255,43 @@ def train(sess, model, eval_model, train_set, valid_set, test_set):
             summary_writer.flush()
             start = time.time()
 
+            if not step % hps.save_every and step > 0:
+                print('*** Validation ***')
+                (
+                    valid_cost,
+                    valid_r_cost,
+                    valid_kl_cost
+                ) = sketch_rnn_train.evaluate_model(
+                    sess,
+                    model,
+                    valid_set
+                )
+
+                end = time.time()
+                time_taken_valid = end - start
+                start = time.time()
+
+                valid_cost_summ = tf.compat.v1.summary.Summary()
+                valid_cost_summ.value.add(
+                    tag='Valid_Cost', simple_value=float(valid_cost))
+                valid_reconstr_summ = tf.compat.v1.summary.Summary()
+                valid_reconstr_summ.value.add(
+                    tag='Valid_Reconstr_Cost', simple_value=float(valid_r_cost))
+                valid_kl_summ = tf.compat.v1.summary.Summary()
+                valid_kl_summ.value.add(
+                    tag='Valid_KL_Cost', simple_value=float(valid_kl_cost))
+                valid_time_summ = tf.compat.v1.summary.Summary()
+                valid_time_summ.value.add(
+                    tag='Time_Taken_Valid', simple_value=float(time_taken_valid))
+
+                tf.compat.v1.logging.info(output_log)
+
+                summary_writer.add_summary(valid_cost_summ, train_step)
+                summary_writer.add_summary(valid_reconstr_summ, train_step)
+                summary_writer.add_summary(valid_kl_summ, train_step)
+                summary_writer.add_summary(valid_time_summ, train_step)
+                summary_writer.flush()
+
 
 if __name__ == '__main__':
     sketch_rnn_train.download_pretrained_models(models_root_dir)
@@ -263,10 +299,7 @@ if __name__ == '__main__':
     [train_set, valid_set, test_set, hps_model, eval_hps_model, sample_hps_model] = load_env_compatible(FLAGS.data_dir, model_dir)
     sketch_rnn_train.reset_graph()
     model = sketch_rnn_model.Model(hps_model)
-    eval_model = sketch_rnn_model.Model(eval_hps_model, reuse=True)
-    sample_model = sketch_rnn_model.Model(sample_hps_model, reuse=True)
-
     sess = tf.compat.v1.InteractiveSession()
     sess.run(tf.compat.v1.global_variables_initializer())
     sketch_rnn_train.load_checkpoint(sess, model_dir)
-    train(sess, model, eval_model, train_set, valid_set, test_set)
+    train(sess, model, train_set, valid_set)
