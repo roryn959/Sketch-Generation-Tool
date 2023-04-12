@@ -269,6 +269,7 @@ def train(sess, model, eval_model, train_set, valid_set, test_set):
   # main train loop
 
   hps = model.hps
+
   start = time.time()
 
   for _ in range(hps.num_steps):
@@ -285,7 +286,7 @@ def train(sess, model, eval_model, train_set, valid_set, test_set):
         model.input_data: x,
         model.sequence_lengths: s,
         model.lr: curr_learning_rate,
-        model.kl_weight: curr_kl_weight
+        model.kl_weight: curr_kl_weight,
     }
 
     (train_cost, r_cost, kl_cost, _, train_step, _) = sess.run([

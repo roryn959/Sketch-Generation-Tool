@@ -165,9 +165,9 @@ def _cast_to_type_if_compatible(name, param_type, value):
       not isinstance(value, (six.string_types, six.binary_type))):
     raise ValueError(fail_msg)
 
-  # Avoid converting a number or string type to a boolean or vice versa.
-  if issubclass(param_type, bool) != isinstance(value, bool):
-    raise ValueError(fail_msg)
+  # # Avoid converting a number or string type to a boolean or vice versa.
+  # if issubclass(param_type, bool) != isinstance(value, bool):
+  #   raise ValueError(fail_msg)
 
   # Avoid converting float to an integer (the reverse is fine).
   if (issubclass(param_type, numbers.Integral) and
