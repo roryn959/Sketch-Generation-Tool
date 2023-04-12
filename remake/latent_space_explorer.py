@@ -1,4 +1,5 @@
 import tkinter as tk
+import tkmacosx as tkm
 import tensorflow as tf
 import numpy as np
 import os
@@ -91,8 +92,9 @@ class DataUtilities:
     def strokes_to_svg(sketch, filename='picture.svg', size_coefficient=0.2):
         # Given a sketch in 3-stroke format, draw svg to filename.
         # Adapted from https://github.com/magenta/magenta-demos/blob/main/jupyter-notebooks/Sketch_RNN.ipynb
-        # in order to draw svg as series of paths for each stroke, rather than a single large
-        # path such that one may stroke extensions such as colour more easily.
+        # in order to draw svg as series of paths for each stroke,
+        # rather than a single large path such that one may include stroke
+        # extensions such as colour more easily.
 
         tf.compat.v1.gfile.MakeDirs(os.path.dirname(filename))
 
@@ -127,7 +129,6 @@ class DataUtilities:
             dwg.add(dwg.path(path).stroke('black', 1).fill('none'))
 
         dwg.save()
-        print('Picture saved!')
 
     @staticmethod
     def selectiveRDP(sketch, epsilon):
@@ -137,12 +138,18 @@ class DataUtilities:
         last_index = 1
         for i, stroke in enumerate(sketch[1:]):
             if stroke[2]:
-                simplified_section = rdp.rdp(sketch[last_index:i+1][:-1], epsilon=epsilon)
+                simplified_section = rdp.rdp(
+                    sketch[last_index:i+1][:-1],
+                    epsilon=epsilon
+                )
                 for simplified_stroke in simplified_section:
                     new_sketch.append(simplified_stroke)
                 new_sketch[-1][-1] = 1
                 last_index = i+2
-        simplified_section = rdp.rdp(sketch[last_index:][:-1], epsilon=epsilon)
+        simplified_section = rdp.rdp(
+            sketch[last_index:][:-1],
+            epsilon=epsilon
+        )
         for simplified_stroke in simplified_section:
             new_sketch.append(simplified_stroke)
         return new_sketch
@@ -179,7 +186,7 @@ class DataUtilities:
                 stroke[0], stroke[1], not stroke[2], stroke[2], 0
             ]
             new_sketch.append(new_stroke)
-        while len(new_sketch) <= max_len:
+        while len(new_sketch) < max_len:
             new_sketch.append([0, 0, 0, 0, 1])
         return new_sketch
 
@@ -262,7 +269,7 @@ class ModelHandler:
     def getMaxSeqLen(self):
         return self.__modelFactory.getEncodeModel().hps.max_seq_len
 
-    def toLatent(self, sketch):
+    def sketchToLatent(self, sketch):
         strokes = DataUtilities.stroke_3_to_stroke_5(
             sketch,
             max_len=self.__modelFactory.getEncodeModel().hps.max_seq_len
@@ -280,14 +287,17 @@ class ModelHandler:
 
         return z
 
-    def fromLatent(self, z):
+    def generateFromLatent(self, z, existing_strokes=None):
         strokes, _ = model.sample(
             self.__modelFactory.getSession(),
             self.__modelFactory.getDecodeModel(),
             seq_len=self.__modelFactory.getEncodeModel().hps.max_seq_len,
             temperature=0.1,
-            z=z, greedy_mode=True)
+            z=z, greedy_mode=True, existing_strokes=existing_strokes)
         return strokes
+
+    def getLatentSize(self):
+        return self.__modelFactory.getDecodeModel().hps.z_size
 
 
 class ScalingCanvas(tk.Canvas):
@@ -319,10 +329,26 @@ class ScalingCanvas(tk.Canvas):
         self.scale('all', 0, 0, width_factor, height_factor)
 
 
-class ExploreWindow:
-    def __init__(self, model_handler, z):
+class ExplorationWindow:
+    def __init__(self, model_handler, z=None, existing_strokes=None):
         # Erroneous attributes
-        self.__z = z
+        # We expect either a z (if the window is for sketch reinterpretation)
+        # or some existing strokes (for sketch completion)
+        assert (
+            (z is None and existing_strokes is not None) or
+            (z is not None and existing_strokes is None)
+        )
+        if z is None:
+            # Completion
+            self.__z = np.random.normal(
+                size=(1, model_handler.getLatentSize())
+            )
+            self.__existing_strokes = existing_strokes
+        else:
+            # Reinterpretation
+            self.__z = z
+            self.__existing_strokes = None
+
         self.__deviations = {
             'Low': 0.2,
             'Medium': 0.5,
@@ -426,7 +452,13 @@ class ExploreWindow:
     def __updateSketches(self):
         sketches = []
         for z in self.__zs:
-            sketch = self.__model_handler.fromLatent([z])
+            if self.__existing_strokes is not None:
+                sketch = self.__model_handler.generateFromLatent(
+                    [z],
+                    np.array(self.__existing_strokes)
+                )
+            else:
+                sketch = self.__model_handler.generateFromLatent([z])
             sketch = utils.to_normal_strokes(sketch)
             sketches.append(sketch)
 
@@ -445,7 +477,7 @@ class ExploreWindow:
         self.__zs[4] = z
 
     def __saveFavourite(self):
-        sketch = self.__model_handler.fromLatent([self.__z[0]])
+        sketch = self.__model_handler.generateFromLatent([self.__z[0]])
         sketch = utils.to_normal_strokes(sketch)
         DataUtilities.strokes_to_svg(sketch)
 
@@ -473,7 +505,7 @@ class Sketch_Window:
         self.__root = tk.Tk()
         self.__root.title('Sketch Pad')
         self.__root.geometry('700x600')
-        self.__root.minsize(400, 350)
+        self.__root.minsize(615, 350)
 
         # Canvas to draw on
         self.__sketchCanvas = ScalingCanvas(
@@ -483,21 +515,118 @@ class Sketch_Window:
             width=50,
             height=50
         )
-        self.__sketchCanvas.config(bg='white', highlightbackground='black')
-        self.__sketchCanvas.grid(row=0, column=0, columnspan=4, sticky='nesw')
+        self.__sketchCanvas.config(
+            bg='white',
+            highlightbackground='black'
+        )
+        self.__sketchCanvas.grid(
+            row=0,
+            column=0,
+            columnspan=5,
+            sticky='nesw'
+        )
         self.__sketchCanvas.bind('<B1-Motion>', self.__pen_down)
         self.__sketchCanvas.bind('<ButtonRelease-1>', self.__pen_up)
 
         # Buttons to initiate sketch generation or completion
-        self.__generateButton = tk.Button(
+        self.__generateButtonFrame = tk.Frame(
             self.__root,
-            text='Generate Similar Sketches',
-            command=self.__generateExploreWindow
+            highlightbackground='black',
+            highlightthickness=2
         )
-        self.__generateButton.grid(row=1, column=0, columnspan=4, pady=(0, 5))
+        self.__generateButtonFrame.grid(row=1, column=0, sticky='nesw')
+        self.__generateButtonFrame.columnconfigure(0, weight=1)
+        self.__generateButtonFrame.rowconfigure(0, weight=1)
+        self.__generateButton = tkm.Button(
+            self.__generateButtonFrame,
+            text='Generate Similar Sketches',
+            command=self.__generateExplorationWindow,
+        )
+        self.__generateButton.bind(
+            '<Enter>',
+            lambda _: self.__generateButton.config(bg='gray58')
+        )
+        self.__generateButton.bind(
+            '<Leave>',
+            lambda _: self.__generateButton.config(bg='white')
+        )
+        self.__generateButton.grid(row=0, column=0)
+
+        self.__completeButtonFrame = tk.Frame(
+            self.__root,
+            highlightbackground='black',
+            highlightthickness=2
+        )
+        self.__completeButtonFrame.grid(
+            row=1,
+            column=4,
+            columnspan=1,
+            sticky='nesw'
+        )
+        self.__completeButtonFrame.columnconfigure(0, weight=1)
+        self.__completeButtonFrame.rowconfigure(0, weight=1)
+        self.__completeButton = tkm.Button(
+            self.__completeButtonFrame,
+            text='Generate Sketch Completions',
+            command=self.__generateCompletionWindow
+        )
+        self.__completeButton.bind(
+            '<Enter>',
+            lambda _: self.__completeButton.config(bg='gray58')
+        )
+        self.__completeButton.bind(
+            '<Leave>',
+            lambda _: self.__completeButton.config(bg='white')
+        )
+        self.__completeButton.grid(row=0, column=0)
+
+        # Stroke scale and colour inputs
+        self.__optionsFrame = tk.Frame(
+            self.__root,
+            highlightbackground='black',
+            highlightthickness=2
+        )
+        self.__optionsFrame.grid(
+            row=1,
+            column=1,
+            columnspan=3,
+            sticky='nesw'
+        )
+        self.__sizeSlider = tk.Scale(
+            self.__optionsFrame,
+            from_=1,
+            to=10,
+            orient=tk.HORIZONTAL
+        )
+        self.__sizeSlider.bind(
+            '<ButtonRelease-1>',
+            self.__updateBrushThickness
+        )
+        self.__sizeSlider.grid(
+            row=0,
+            column=1,
+            pady=(0, 10)
+        )
+        self.__sizeLabel = tk.Label(
+            self.__optionsFrame,
+            text='Stroke Size:'
+        )
+        self.__sizeLabel.grid(
+            row=0,
+            column=0,
+            padx=(0, 10)
+        )
+        self.__changeColourButton = tk.Button(
+            self.__optionsFrame,
+            text='Change Brush Colour',
+            command=self.__changeColour
+        )
+        self.__changeColourButton.grid(row=1, column=0, columnspan=2)
+        self.__optionsFrame.columnconfigure((0, 1), weight=1)
+        self.__optionsFrame.rowconfigure((0, 1), weight=1)
 
         # Make sure grid cells scale properly with window resize
-        self.__root.columnconfigure([i for i in range(4)], weight=1)
+        self.__root.columnconfigure([i for i in range(3)], weight=1)
         self.__root.rowconfigure(0, weight=1)
 
         self.__root.mainloop()
@@ -505,8 +634,8 @@ class Sketch_Window:
     def getBrushThickness(self):
         return self.__brushThickness
 
-    def setBrushThickness(self, value):
-        self.__brushThickness = value
+    def __updateBrushThickness(self, event):
+        self.__lineThickness = self.__sizeSlider.get()
 
     def getBaseDims(self):
         return self.__base_window_dims
@@ -528,18 +657,9 @@ class Sketch_Window:
         # Add movement to stroke list after scaling based on canvas size
         self.__sketch.append([
             event.x/self.__x_factor,
-            event.y/self.__x_factor, 0
+            event.y/self.__x_factor,
+            0
         ])
-
-    def __paint_oval(self, event):
-        self.__sketchCanvas.create_oval(
-            event.x-self.__ovalSize,
-            event.y-self.__ovalSize,
-            event.x+self.__ovalSize,
-            event.y+self.__ovalSize,
-            fill='black',
-            outline='black'
-        )
 
     def __paint_line(self, event):
         self.__sketchCanvas.create_line(
@@ -551,10 +671,14 @@ class Sketch_Window:
         )
 
     def __pen_up(self, event):
-        self.__sketch[-1][-1] = 1
-        self.__cursor = None
+        if len(self.__sketch) > 0:
+            self.__sketch[-1][-1] = 1
+            self.__cursor = None
 
-    def __generateExploreWindow(self):
+    def __changeColour(self):
+        print('g')
+
+    def __generateExplorationWindow(self):
         simplified_sketch_points = DataUtilities.simplify_as_possible(
             self.__sketch,
             self.__modelHandler.getMaxSeqLen()
@@ -565,8 +689,31 @@ class Sketch_Window:
         )
 
         sketch = DataUtilities.normalise(simplified_sketch_strokes)
-        z = self.__modelHandler.toLatent(sketch)
-        ExploreWindow(model_handler=self.__modelHandler, z=z)
+        z = self.__modelHandler.sketchToLatent(sketch)
+        ExplorationWindow(
+            model_handler=self.__modelHandler,
+            z=z
+        )
+
+    def __generateCompletionWindow(self):
+        simplified_sketch_points = DataUtilities.simplify_as_possible(
+            self.__sketch,
+            self.__modelHandler.getMaxSeqLen()/2
+        )
+        simplified_sketch_strokes = DataUtilities.convertPointsToStrokes(
+            simplified_sketch_points,
+            factor=10
+        )
+
+        sketch = DataUtilities.normalise(simplified_sketch_strokes)
+        sketch = DataUtilities.stroke_3_to_stroke_5(
+            sketch,
+            self.__modelHandler.getMaxSeqLen()
+        )
+        ExplorationWindow(
+            model_handler=self.__modelHandler,
+            existing_strokes=sketch
+        )
 
 
 if __name__ == '__main__':

@@ -30,7 +30,7 @@ def copy_hparams(hparams):
 def get_default_hparams():
   """Return default HParams for sketch-rnn."""
   hparams = contrib_training.HParams(
-      data_set=['kanji.rdp200.npz'],  # Our dataset.
+      data_set=['aaron_sheep.npz'],  # Our dataset.
       num_steps=10000000,  # Total number of steps of training. Keep large.
       save_every=500,  # Number of batches per checkpoint creation.
       max_seq_len=250,  # Not used. Will be changed by model. [Eliminate?]
@@ -358,7 +358,7 @@ class Model(object):
 
 
 def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
-           z=None):
+           z=None, existing_strokes=None):
   """Samples a sequence from a pre-trained model."""
 
   def adjust_temp(pi_pdf, temp):
@@ -393,6 +393,7 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
 
   prev_x = np.zeros((1, 1, 5), dtype=np.float32)
   prev_x[0, 0, 2] = 1  # initially, we want to see beginning of new stroke
+
   if z is None:
     z = np.random.randn(1, model.hps.z_size)  # not used if unconditional
 
@@ -407,7 +408,40 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
   greedy = greedy_mode
   temp = temperature
 
-  for i in range(seq_len):
+  if existing_strokes is not None:
+    i = 0
+    while i < existing_strokes.shape[0]:
+      if np.array_equiv(existing_strokes[i], np.array([0, 0, 0, 0, 1])):
+        break
+      strokes[i] = existing_strokes[i]
+      prev_x = np.expand_dims(existing_strokes[i:i+1], axis=0)
+      if not model.hps.conditional:
+        feed = {
+          model.input_x: prev_x,
+          model.sequence_lengths: [1],
+          model.initial_state: prev_state
+        }
+      else:
+        feed = {
+          model.input_x: prev_x,
+          model.sequence_lengths: [1],
+          model.initial_state: prev_state,
+          model.batch_z: z
+        }
+      
+      params = sess.run([
+        model.pi, model.mu1, model.mu2, model.sigma1, model.sigma2, model.corr,
+        model.pen, model.final_state
+      ], feed)
+
+      prev_state = params[-1]
+      i += 1
+    start = i
+    prev_x = np.zeros((1, 1, 5), dtype=np.float32)
+  else:
+    start = 0
+
+  for i in range(start, seq_len):
     if not model.hps.conditional:
       feed = {
           model.input_x: prev_x,
