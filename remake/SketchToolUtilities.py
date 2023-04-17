@@ -1,8 +1,18 @@
+# NOTICE
+# This code is derivative of and directly
+# uses content belonging to the Sketch-RNN repository
+# the Sketch-RNN repository (https://github.com/magenta/magenta/tree/main/magenta/models/sketch_rnn))
+
+# Provides utility methods for use in SketchTool.py and TransferLearning.py
+
 import tensorflow as tf
+import numpy as np
 
 import svgwrite
 import os
 import rdp
+import utils
+import random
 
 
 class Stack:
@@ -79,9 +89,9 @@ class DataUtilities:
         return (min_x, max_x, min_y, max_y)
 
     @staticmethod
-    def strokes_to_svg(sketch, filename='picture.svg', size_coefficient=0.2):
-        # Given a sketch in 3-stroke format, draw svg to filename.
-        # Adapted from https://github.com/magenta/magenta-demos/blob/main/jupyter-notebooks/Sketch_RNN.ipynb
+    def strokes_to_svg(sketch, filename='picture', size_coefficient=0.2):
+        # Given a sketch in 3-stroke format, draw svg to filename. Adapted from
+        # https://github.com/magenta/magenta-demos/blob/main/jupyter-notebooks/Sketch_RNN.ipynb
         # in order to draw svg as series of paths for each stroke,
         # rather than a single large path such that one may include stroke
         # extensions such as colour more easily.
@@ -149,6 +159,8 @@ class DataUtilities:
 
     @staticmethod
     def simplify_as_possible(sketch, max_seq_len):
+        # Simplify a sketch using RDP algorithm until it
+        # is shorter than a particular length
         if len(sketch) < max_seq_len:
             return sketch
 
@@ -173,12 +185,50 @@ class DataUtilities:
 
     @staticmethod
     def stroke_3_to_stroke_5(sketch, max_len):
+        # Convert sketch in stroke-3 format to stroke-5
         new_sketch = [[0, 0, 1, 0, 0]]
         for stroke in sketch:
             new_stroke = [
                 stroke[0], stroke[1], not stroke[2], stroke[2], 0
             ]
             new_sketch.append(new_stroke)
-        while len(new_sketch) < max_len:
+        while len(new_sketch) <= max_len:
             new_sketch.append([0, 0, 0, 0, 1])
         return new_sketch
+
+
+class DataTweaker(utils.DataLoader):
+    def tweak(self):
+        self.__transform()
+
+        norm_factor = self.calculate_normalizing_scale_factor()
+        self.normalize(norm_factor)
+
+    def __transform(self):
+        # Make transformations. Add or remove line as desired
+        self.__expand_horizon()
+        self.__rotate_c()
+
+    def __rotate_c(self):
+        # Clockwise rotation
+        for sketch in self.strokes:
+            # random theta between 45, 135 degrees
+            theta = (random.random()*(np.pi/2))+np.pi/4
+            self.__rotate_individual(sketch, theta)
+
+    def __rotate_individual(self, sketch, theta):
+        rotation_matrix = np.array([
+            [np.cos(theta), -np.sin(theta)],
+            [np.sin(theta), np.cos(theta)]
+        ])
+        for stroke in sketch:
+            stroke[:2] = np.dot(rotation_matrix, stroke[:2].T).T
+
+    def __expand_horizon(self):
+        for sketch in self.strokes:
+            factor = (random.random()*3)+1
+            self.__expand_individual_horizon(sketch, factor)
+
+    def __expand_individual_horizon(self, sketch, factor):
+        for stroke in sketch:
+            stroke[0] *= factor

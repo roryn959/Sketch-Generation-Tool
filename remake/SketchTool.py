@@ -1,4 +1,12 @@
+# NOTICE
+# This code is derivative of the Sketch-RNN repository
+# (https://github.com/magenta/magenta/tree/main/magenta/models/sketch_rnn)
+# and the accompanying Jupyter notebook
+# (https://github.com/magenta/magenta-demos/blob/main/jupyter-notebooks/Sketch_RNN.ipynb)
+# and its used in compliance with the Apache Licence 2.0.
+
 import tkinter as tk
+from tkinter.colorchooser import askcolor
 import tkmacosx as tkm
 import tensorflow as tf
 import numpy as np
@@ -38,8 +46,6 @@ class ModelFactory(ModelFactoryInterface):
         saver.restore(sess, ckpt.model_checkpoint_path)
 
     def __load_model(self, model_dir):
-        # Code modified from: https://github.com/magenta/magenta-demos/blob/main/jupyter-notebooks/Sketch_RNN.ipynb
-
         model_params = model.get_default_hparams()
         path = os.path.join(model_dir, 'model_config.json')
         with tf.compat.v1.gfile.Open(path, 'r') as f:
@@ -164,16 +170,23 @@ class ExplorationWindow:
             (z is None and existing_strokes is not None) or
             (z is not None and existing_strokes is None)
         )
+
+        # Main window properties
+        self.__root = tk.Tk()
+        self.__root.minsize(500, 500)
+
         if z is None:
             # Completion
             self.__z = np.random.normal(
                 size=(1, model_handler.getLatentSize())
             )
             self.__existing_strokes = existing_strokes
+            self.__root.title('Sketch Completion Window')
         else:
             # Reinterpretation
             self.__z = z
             self.__existing_strokes = None
+            self.__root.title('Sketch Reinterpretation Window')
 
         self.__deviations = {
             'Low': 0.2,
@@ -182,10 +195,6 @@ class ExplorationWindow:
         self.__model_handler = model_handler
         self.__padding = 15
         self.__previous_zs = Stack()
-
-        # Main window properties
-        self.__root = tk.Tk()
-        self.__root.minsize(500, 500)
 
         # Widget creation
         self.__initialiseCanvases()
@@ -320,7 +329,7 @@ class Sketch_Window:
         # Erroneous attributes
         self.__modelHandler = ModelHandler()
         self.__lineThickness = 3
-        self.__ovalSize = 2
+        self.__brushColour = 'black'
         self.__sketch = []
         self.__base_window_dims = (700, 600)
         self.__x_factor = 1
@@ -362,7 +371,7 @@ class Sketch_Window:
         )
         self.__generateButtonFrame.grid(row=1, column=0, sticky='nesw')
         self.__generateButtonFrame.columnconfigure(0, weight=1)
-        self.__generateButtonFrame.rowconfigure(0, weight=1)
+        self.__generateButtonFrame.rowconfigure((0, 1), weight=1)
         self.__generateButton = tkm.Button(
             self.__generateButtonFrame,
             text='Generate Similar Sketches',
@@ -378,21 +387,8 @@ class Sketch_Window:
         )
         self.__generateButton.grid(row=0, column=0)
 
-        self.__completeButtonFrame = tk.Frame(
-            self.__root,
-            highlightbackground='black',
-            highlightthickness=2
-        )
-        self.__completeButtonFrame.grid(
-            row=1,
-            column=4,
-            columnspan=1,
-            sticky='nesw'
-        )
-        self.__completeButtonFrame.columnconfigure(0, weight=1)
-        self.__completeButtonFrame.rowconfigure(0, weight=1)
         self.__completeButton = tkm.Button(
-            self.__completeButtonFrame,
+            self.__generateButtonFrame,
             text='Generate Sketch Completions',
             command=self.__generateCompletionWindow
         )
@@ -404,7 +400,50 @@ class Sketch_Window:
             '<Leave>',
             lambda _: self.__completeButton.config(bg='white')
         )
-        self.__completeButton.grid(row=0, column=0)
+        self.__completeButton.grid(row=1, column=0)
+
+        self.__saveAndClearButtonFrame = tk.Frame(
+            self.__root,
+            highlightbackground='black',
+            highlightthickness=2
+        )
+        self.__saveAndClearButtonFrame.grid(
+            row=1,
+            column=4,
+            columnspan=1,
+            sticky='nesw'
+        )
+        self.__saveAndClearButtonFrame.columnconfigure(0, weight=1)
+        self.__saveAndClearButtonFrame.rowconfigure((0, 1), weight=1)
+        self.__clearButton = tkm.Button(
+            self.__saveAndClearButtonFrame,
+            text='Clear Sketchpad',
+            command=self.__clearSketchpad
+        )
+        self.__clearButton.bind(
+            '<Enter>',
+            lambda _: self.__clearButton.config(bg='gray58')
+        )
+        self.__clearButton.bind(
+            '<Leave>',
+            lambda _: self.__clearButton.config(bg='white')
+        )
+        self.__clearButton.grid(row=0, column=0)
+
+        self.__saveButton = tkm.Button(
+            self.__saveAndClearButtonFrame,
+            text='Save Sketch',
+            command=self.__saveSketch
+        )
+        self.__saveButton.bind(
+            '<Enter>',
+            lambda _: self.__saveButton.config(bg='gray58')
+        )
+        self.__saveButton.bind(
+            '<Leave>',
+            lambda _: self.__saveButton.config(bg='white')
+        )
+        self.__saveButton.grid(row=1, column=0)
 
         # Stroke scale and colour inputs
         self.__optionsFrame = tk.Frame(
@@ -445,9 +484,9 @@ class Sketch_Window:
         self.__changeColourButton = tk.Button(
             self.__optionsFrame,
             text='Change Brush Colour',
-            command=self.__changeColour
+            command=self.__changeBrushColour
         )
-        self.__changeColourButton.grid(row=1, column=0, columnspan=2)
+        self.__changeColourButton.grid(row=1, column=0, columnspan=2, pady=(0, 10))
         self.__optionsFrame.columnconfigure((0, 1), weight=1)
         self.__optionsFrame.rowconfigure((0, 1), weight=1)
 
@@ -460,6 +499,10 @@ class Sketch_Window:
     def getBrushThickness(self):
         return self.__brushThickness
 
+    def __changeBrushColour(self):
+        colour = askcolor()
+        self.__brushColour = colour[1]
+
     def __updateBrushThickness(self, event):
         self.__lineThickness = self.__sizeSlider.get()
 
@@ -468,6 +511,19 @@ class Sketch_Window:
 
     def getFactors(self):
         return self.__x_factor, self.__y_factor
+
+    def __clearSketchpad(self):
+        self.__sketch = []
+        self.__sketchCanvas.delete('all')
+
+    def __saveSketch(self):
+        DataUtilities.strokes_to_svg(
+            DataUtilities.stroke_3_to_stroke_5(
+                self.__sketch,
+                max_len=self.__modelHandler.getMaxSeqLen(),
+            )
+        )
+        print('Sketch Saved!')
 
     def adjustStrokeFactors(self, factors):
         (x_factor, y_factor) = factors
@@ -493,16 +549,14 @@ class Sketch_Window:
             self.__cursor[1],
             event.x,
             event.y,
-            width=self.__lineThickness
+            width=self.__lineThickness,
+            fill=self.__brushColour
         )
 
     def __pen_up(self, event):
         if len(self.__sketch) > 0:
             self.__sketch[-1][-1] = 1
             self.__cursor = None
-
-    def __changeColour(self):
-        print('g')
 
     def __generateExplorationWindow(self):
         simplified_sketch_points = DataUtilities.simplify_as_possible(

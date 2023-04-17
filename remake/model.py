@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# NOTICE
+# This code contains a modified version of code originally from
+# the Sketch-RNN repository (https://github.com/magenta/magenta/tree/main/magenta/models/sketch_rnn)
+# The code is identical excluding lines 389, 416-447.
+
 """Sketch-RNN Model."""
 
 import random

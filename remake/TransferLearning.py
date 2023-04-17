@@ -1,3 +1,7 @@
+# NOTICE
+# This code contains a modified version of code originally from
+# the Sketch-RNN repository (https://github.com/magenta/magenta/tree/main/magenta/models/sketch_rnn)
+
 from io import BytesIO
 
 import tensorflow as tf
@@ -10,6 +14,7 @@ import requests
 import sketch_rnn_train
 import model as sketch_rnn_model
 import utils
+from SketchToolUtilities import DataTweaker, DataUtilities
 
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
 
@@ -23,28 +28,6 @@ models_root_dir = '/tmp/sketch_rnn/models'
 model_dir = '/tmp/sketch_rnn/models/aaron_sheep/lstm'
 
 
-class DataTweaker(utils.DataLoader):
-    def tweak(self):
-        self.__rotate_c()
-        self.__expand_x()
-        norm_factor = self.calculate_normalizing_scale_factor()
-        self.normalize(norm_factor)
-
-    def __rotate_c(self):
-        # Clockwise rotation
-        for sketch in self.strokes:
-            for stroke in sketch:
-                dx = stroke[0]
-                dy = stroke[1]
-                stroke[0] = -dy
-                stroke[1] = dx
-
-    def __expand_x(self, factor=3):
-        for sketch in self.strokes:
-            for stroke in sketch:
-                stroke[0] *= factor
-
-
 def load_env_compatible(data_dir, model_dir):
     """Loads environment for inference mode, used in jupyter notebook."""
     # modified https://github.com/tensorflow/magenta/blob/master/magenta/models/sketch_rnn/sketch_rnn_train.py
@@ -56,10 +39,10 @@ def load_env_compatible(data_dir, model_dir):
     for fix in fix_list:
         data[fix] = (data[fix] == 1)
     model_params.parse_json(json.dumps(data))
-    return load_dataset(data_dir, model_params, inference_mode=True)
+    return load_dataset(data_dir, model_params)
 
 
-def load_dataset(data_dir, model_params, inference_mode=False):
+def load_dataset(data_dir, model_params):
     """Loads the .npz file, and splits the set into train/valid/test."""
 
     # normalizes the x and y columns using the training set.
@@ -111,23 +94,6 @@ def load_dataset(data_dir, model_params, inference_mode=False):
 
     tf.compat.v1.logging.info('model_params.max_seq_len %i.', model_params.max_seq_len)
 
-    eval_model_params = sketch_rnn_model.copy_hparams(model_params)
-
-
-
-    eval_model_params.use_input_dropout = 0
-    eval_model_params.use_recurrent_dropout = 0
-    eval_model_params.use_output_dropout = 0
-    eval_model_params.is_training = 1
-
-    if inference_mode:
-        eval_model_params.batch_size = 1
-        eval_model_params.is_training = 0
-
-    sample_model_params = sketch_rnn_model.copy_hparams(eval_model_params)
-    sample_model_params.batch_size = 1  # only sample one at a time
-    sample_model_params.max_seq_len = 1  # sample one point at a time
-
     train_set = DataTweaker(
         train_strokes,
         model_params.batch_size,
@@ -137,30 +103,21 @@ def load_dataset(data_dir, model_params, inference_mode=False):
 
     normalizing_scale_factor = train_set.calculate_normalizing_scale_factor()
     train_set.normalize(normalizing_scale_factor)
-
     train_set.tweak()
 
     valid_set = DataTweaker(
         valid_strokes,
         model_params.batch_size,
-        max_seq_length=eval_model_params.max_seq_len,
+        max_seq_length=model_params.max_seq_len,
         random_scale_factor=0.0,
         augment_stroke_prob=0.0)
     valid_set.normalize(normalizing_scale_factor)
     valid_set.tweak()
 
-    test_set = DataTweaker(
-        test_strokes,
-        eval_model_params.batch_size,
-        max_seq_length=eval_model_params.max_seq_len,
-        random_scale_factor=0.0,
-        augment_stroke_prob=0.0)
-    test_set.normalize(normalizing_scale_factor)
-    test_set.tweak()
-
     result = [
-      train_set, valid_set, test_set, model_params, eval_model_params,
-      sample_model_params
+      train_set,
+      valid_set,
+      model_params,
     ]
     return result
 
@@ -269,6 +226,7 @@ def train(sess, model, train_set, valid_set):
 
                 end = time.time()
                 time_taken_valid = end - start
+                DataUtilities.strokes_to_svg(sketch_rnn_model.sample(sess, model), filename=str(step))
                 start = time.time()
 
                 valid_cost_summ = tf.compat.v1.summary.Summary()
@@ -296,7 +254,7 @@ def train(sess, model, train_set, valid_set):
 if __name__ == '__main__':
     sketch_rnn_train.download_pretrained_models(models_root_dir)
     tf.compat.v1.disable_v2_behavior()
-    [train_set, valid_set, test_set, hps_model, eval_hps_model, sample_hps_model] = load_env_compatible(FLAGS.data_dir, model_dir)
+    [train_set, valid_set, hps_model] = load_env_compatible(FLAGS.data_dir, model_dir)
     sketch_rnn_train.reset_graph()
     model = sketch_rnn_model.Model(hps_model)
     sess = tf.compat.v1.InteractiveSession()

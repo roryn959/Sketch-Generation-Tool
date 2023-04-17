@@ -1,3 +1,4 @@
+# Defines pseudo-interfaces for use in SketchTool.py
 
 class ModelFactoryInterface:
     ''' Class used by ModelHandler to acces models '''
