@@ -1,7 +1,8 @@
 # NOTICE
 # This code is derivative of and directly
 # uses content belonging to the Sketch-RNN repository
-# the Sketch-RNN repository (https://github.com/magenta/magenta/tree/main/magenta/models/sketch_rnn))
+# the Sketch-RNN repository
+# (https://github.com/magenta/magenta/tree/main/magenta/models/sketch_rnn))
 
 # Provides utility methods for use in SketchTool.py and TransferLearning.py
 

@@ -486,7 +486,12 @@ class Sketch_Window:
             text='Change Brush Colour',
             command=self.__changeBrushColour
         )
-        self.__changeColourButton.grid(row=1, column=0, columnspan=2, pady=(0, 10))
+        self.__changeColourButton.grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            pady=(0, 10)
+        )
         self.__optionsFrame.columnconfigure((0, 1), weight=1)
         self.__optionsFrame.rowconfigure((0, 1), weight=1)
 

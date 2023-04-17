@@ -1,5 +1,5 @@
 # NOTICE
-# This code contains a modified version of code originally from
+# This code is a modified version of code originally from
 # the Sketch-RNN repository (https://github.com/magenta/magenta/tree/main/magenta/models/sketch_rnn)
 
 from io import BytesIO
@@ -33,9 +33,18 @@ def load_env_compatible(data_dir, model_dir):
     # modified https://github.com/tensorflow/magenta/blob/master/magenta/models/sketch_rnn/sketch_rnn_train.py
     # to work with depreciated tf.HParams functionality
     model_params = sketch_rnn_model.get_default_hparams()
-    with tf.compat.v1.gfile.Open(os.path.join(model_dir, 'model_config.json'), 'r') as f:
+    with tf.compat.v1.gfile.Open(
+        os.path.join(model_dir, 'model_config.json'),
+        'r'
+    ) as f:
         data = json.load(f)
-    fix_list = ['conditional', 'is_training', 'use_input_dropout', 'use_output_dropout', 'use_recurrent_dropout']
+    fix_list = [
+        'conditional',
+        'is_training',
+        'use_input_dropout',
+        'use_output_dropout',
+        'use_recurrent_dropout'
+    ]
     for fix in fix_list:
         data[fix] = (data[fix] == 1)
     model_params.parse_json(json.dumps(data))
@@ -62,7 +71,11 @@ def load_dataset(data_dir, model_params):
             data_filepath = '/'.join([data_dir, dataset])
             tf.compat.v1.logging.info('Downloading %s', data_filepath)
             response = requests.get(data_filepath, allow_redirects=True)
-            data = np.load(BytesIO(response.content), allow_pickle=True, encoding='latin1')
+            data = np.load(
+                BytesIO(response.content),
+                allow_pickle=True,
+                encoding='latin1'
+            )
         else:
             data_filepath = os.path.join(data_dir, dataset)
             data = np.load(data_filepath, encoding='latin1', allow_pickle=True)
@@ -78,21 +91,11 @@ def load_dataset(data_dir, model_params):
             valid_strokes = np.concatenate((valid_strokes, data['valid']))
             test_strokes = np.concatenate((test_strokes, data['test']))
 
-    all_strokes = np.concatenate((train_strokes, valid_strokes, test_strokes))
-    num_points = 0
-    for stroke in all_strokes:
-        num_points += len(stroke)
-    avg_len = num_points / len(all_strokes)
-    tf.compat.v1.logging.info('Dataset combined: {} ({}/{}/{}), avg len {}'.format(
-      len(all_strokes), len(train_strokes), len(valid_strokes),
-      len(test_strokes), int(avg_len)))
-
     # calculate the max strokes we need.
+    all_strokes = np.concatenate((train_strokes, valid_strokes, test_strokes))
     max_seq_len = utils.get_max_len(all_strokes)
     # overwrite the hps with this calculation.
     model_params.max_seq_len = max_seq_len
-
-    tf.compat.v1.logging.info('model_params.max_seq_len %i.', model_params.max_seq_len)
 
     train_set = DataTweaker(
         train_strokes,
@@ -133,7 +136,6 @@ def train(sess, model, train_set, valid_set):
     for var in t_vars:
         num_param = np.prod(var.get_shape().as_list())
         count_t_vars += num_param
-        tf.compat.v1.logging.info('%s %s %i', var.name, str(var.get_shape()), num_param)
     tf.compat.v1.logging.info('Total trainable variables %i.', count_t_vars)
     model_summ = tf.compat.v1.summary.Summary()
     model_summ.value.add(
@@ -179,7 +181,10 @@ def train(sess, model, train_set, valid_set):
             time_taken = end - start
 
             cost_summ = tf.compat.v1.summary.Summary()
-            cost_summ.value.add(tag='Train_Cost', simple_value=float(train_cost))
+            cost_summ.value.add(
+                tag='Train_Cost',
+                simple_value=float(train_cost)
+            )
             reconstr_summ = tf.compat.v1.summary.Summary()
             reconstr_summ.value.add(
                 tag='Train_Reconstr_Cost', simple_value=float(r_cost))
@@ -197,8 +202,15 @@ def train(sess, model, train_set, valid_set):
 
             output_format = ('step: %d, lr: %.6f, klw: %0.4f, cost: %.4f, '
                              'recon: %.4f, kl: %.4f, train_time_taken: %.4f')
-            output_values = (step, curr_learning_rate, curr_kl_weight, train_cost,
-                             r_cost, kl_cost, time_taken)
+            output_values = (
+                step,
+                curr_learning_rate,
+                curr_kl_weight,
+                train_cost,
+                r_cost,
+                kl_cost,
+                time_taken
+            )
             output_log = output_format % output_values
 
             tf.compat.v1.logging.info(output_log)
@@ -226,7 +238,10 @@ def train(sess, model, train_set, valid_set):
 
                 end = time.time()
                 time_taken_valid = end - start
-                DataUtilities.strokes_to_svg(sketch_rnn_model.sample(sess, model), filename=str(step))
+                DataUtilities.strokes_to_svg(
+                    sketch_rnn_model.sample(sess, model),
+                    filename=str(step)
+                )
                 start = time.time()
 
                 valid_cost_summ = tf.compat.v1.summary.Summary()
@@ -234,13 +249,17 @@ def train(sess, model, train_set, valid_set):
                     tag='Valid_Cost', simple_value=float(valid_cost))
                 valid_reconstr_summ = tf.compat.v1.summary.Summary()
                 valid_reconstr_summ.value.add(
-                    tag='Valid_Reconstr_Cost', simple_value=float(valid_r_cost))
+                    tag='Valid_Reconstr_Cost',
+                    simple_value=float(valid_r_cost)
+                )
                 valid_kl_summ = tf.compat.v1.summary.Summary()
                 valid_kl_summ.value.add(
                     tag='Valid_KL_Cost', simple_value=float(valid_kl_cost))
                 valid_time_summ = tf.compat.v1.summary.Summary()
                 valid_time_summ.value.add(
-                    tag='Time_Taken_Valid', simple_value=float(time_taken_valid))
+                    tag='Time_Taken_Valid',
+                    simple_value=float(time_taken_valid)
+                )
 
                 tf.compat.v1.logging.info(output_log)
 
@@ -254,7 +273,11 @@ def train(sess, model, train_set, valid_set):
 if __name__ == '__main__':
     sketch_rnn_train.download_pretrained_models(models_root_dir)
     tf.compat.v1.disable_v2_behavior()
-    [train_set, valid_set, hps_model] = load_env_compatible(FLAGS.data_dir, model_dir)
+    [
+        train_set,
+        valid_set,
+        hps_model
+    ] = load_env_compatible(FLAGS.data_dir, model_dir)
     sketch_rnn_train.reset_graph()
     model = sketch_rnn_model.Model(hps_model)
     sess = tf.compat.v1.InteractiveSession()
