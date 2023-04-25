@@ -9,6 +9,8 @@ favourite. The user may continue this process until a satisfactory sketch is fou
 The repository also contains a file which, given a dataset and a pre-trained model, apply tranformations to the dataset and carry
 out transfer learning using this new dataset.
 
+Project written for Python 3.9.
+
 ## To run:
 ### Sketching Application:
 1. If specific pre-trained model desired, change constant *MODEL_DIR* to the url containing the model checkpoint. Default model trained on owl QuickDraw! dataset (https://quickdraw.withgoogle.com/data).
