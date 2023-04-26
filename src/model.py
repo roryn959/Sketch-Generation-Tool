@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # NOTICE
-# This code contains a modified version of code originally from
+# This file contains a modified version of code originally from
 # the Sketch-RNN repository (https://github.com/magenta/magenta/tree/main/magenta/models/sketch_rnn)
 # The code is identical excluding lines 389, 416-447.
 

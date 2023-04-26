@@ -64,7 +64,6 @@ class ModelFactory(ModelFactoryInterface):
 
         model_params.parse_json(json.dumps(data))
 
-        # *** Try higher batch size ***
         model_params.batch_size = 1
         encode_model_params = model.copy_hparams(model_params)
 

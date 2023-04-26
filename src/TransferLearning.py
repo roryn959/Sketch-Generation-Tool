@@ -10,6 +10,8 @@ import os
 import json
 import time
 import requests
+import sys
+import svgwrite
 
 import sketch_rnn_train
 import model as sketch_rnn_model
@@ -27,8 +29,7 @@ PRETRAINED_MODELS_URL = ('http://download.magenta.tensorflow.org/models/'
 models_root_dir = '/tmp/sketch_rnn/models'
 model_dir = '/tmp/sketch_rnn/models/aaron_sheep/lstm'
 
-
-def load_env_compatible(data_dir, model_dir):
+def load_environment(data_dir, model_dir, scale=False):
     """Loads environment for inference mode, used in jupyter notebook."""
     # modified https://github.com/tensorflow/magenta/blob/master/magenta/models/sketch_rnn/sketch_rnn_train.py
     # to work with depreciated tf.HParams functionality
@@ -97,15 +98,23 @@ def load_dataset(data_dir, model_params):
     # overwrite the hps with this calculation.
     model_params.max_seq_len = max_seq_len
 
+    sample_model_params = sketch_rnn_model.copy_hparams(model_params)
+    sample_model_params.use_input_dropout = 0
+    sample_model_params.use_recurrent_dropout = 0
+    sample_model_params.use_output_dropout = 0
+    sample_model_params.is_training = 0
+    sample_model_params.batch_size = 1
+    sample_model_params.max_seq_len = 1
+
     train_set = DataTweaker(
         train_strokes,
         model_params.batch_size,
         max_seq_length=model_params.max_seq_len,
         random_scale_factor=model_params.random_scale_factor,
         augment_stroke_prob=model_params.augment_stroke_prob)
-
     normalizing_scale_factor = train_set.calculate_normalizing_scale_factor()
     train_set.normalize(normalizing_scale_factor)
+    train_set.setScale(scale)
     train_set.tweak()
 
     valid_set = DataTweaker(
@@ -115,17 +124,19 @@ def load_dataset(data_dir, model_params):
         random_scale_factor=0.0,
         augment_stroke_prob=0.0)
     valid_set.normalize(normalizing_scale_factor)
+    valid_set.setScale(scale)
     valid_set.tweak()
 
     result = [
       train_set,
       valid_set,
       model_params,
+      sample_model_params
     ]
     return result
 
 
-def train(sess, model, train_set, valid_set):
+def train(sess, model, sample_model, train_set, valid_set):
     """Train a sketch-rnn model."""
     # Setup summary writer.
     summary_writer = tf.compat.v1.summary.FileWriter(FLAGS.log_root)
@@ -224,7 +235,7 @@ def train(sess, model, train_set, valid_set):
             summary_writer.flush()
             start = time.time()
 
-            if not step % hps.save_every and step > 0:
+            if not step % 100 and step > 0:
                 print('*** Validation ***')
                 (
                     valid_cost,
@@ -238,10 +249,13 @@ def train(sess, model, train_set, valid_set):
 
                 end = time.time()
                 time_taken_valid = end - start
+
+                sketch = sketch_rnn_model.sample(sess, sample_model)[0]
                 DataUtilities.strokes_to_svg(
-                    sketch_rnn_model.sample(sess, model),
-                    filename=str(step)
+                    sketch,
+                    filename=str(step)+'.svg'
                 )
+                
                 start = time.time()
 
                 valid_cost_summ = tf.compat.v1.summary.Summary()
@@ -273,14 +287,40 @@ def train(sess, model, train_set, valid_set):
 if __name__ == '__main__':
     sketch_rnn_train.download_pretrained_models(models_root_dir)
     tf.compat.v1.disable_v2_behavior()
+
+    # Dataset to be scaled before rotation?
+    if 'scale' in sys.argv:
+        print('scaling!')
+        scale = True
+    else:
+        scale = False
+        print('not scaling!')
+
     [
         train_set,
         valid_set,
-        hps_model
-    ] = load_env_compatible(FLAGS.data_dir, model_dir)
+        hps_model,
+        sample_hps_model
+    ] = load_environment(FLAGS.data_dir, model_dir, scale=scale)
+
     sketch_rnn_train.reset_graph()
+
+    # Training new model or one from scratch?
+    if 'new' in sys.argv:
+        print('new!')
+        hps_model = sketch_rnn_model.get_default_hparams()
+    else:
+        print('not new...')
+
     model = sketch_rnn_model.Model(hps_model)
+    sample_model = sketch_rnn_model.Model(sample_hps_model, reuse=True)
+
     sess = tf.compat.v1.InteractiveSession()
     sess.run(tf.compat.v1.global_variables_initializer())
-    sketch_rnn_train.load_checkpoint(sess, model_dir)
-    train(sess, model, train_set, valid_set)
+
+    # Checkpoint must be loaded iff not new model, but after global
+    # variables are initialised
+    if 'new' not in sys.argv:
+        sketch_rnn_train.load_checkpoint(sess, model_dir)
+
+    train(sess, model, sample_model, train_set, valid_set)

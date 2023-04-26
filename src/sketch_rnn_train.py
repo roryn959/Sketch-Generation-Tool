@@ -93,7 +93,7 @@ def download_pretrained_models(
   tf.compat.v1.gfile.MakeDirs(models_root_dir)
   zip_path = os.path.join(
       models_root_dir, os.path.basename(pretrained_models_url))
-  if os.path.isfile(zip_path):
+  if os.path.isfile(zip_path) and False:
     tf.compat.v1.logging.info('%s already exists, using cached copy', zip_path)
   else:
     tf.compat.v1.logging.info('Downloading pretrained models from %s...',

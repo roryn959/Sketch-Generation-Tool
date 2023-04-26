@@ -1,7 +1,6 @@
 # NOTICE
 # This code is derivative of and directly
 # uses content belonging to the Sketch-RNN repository
-# the Sketch-RNN repository
 # (https://github.com/magenta/magenta/tree/main/magenta/models/sketch_rnn))
 
 # Provides utility methods for use in SketchTool.py and TransferLearning.py
@@ -199,6 +198,9 @@ class DataUtilities:
 
 
 class DataTweaker(utils.DataLoader):
+    def setScale(self, scale):
+        self.__scale = scale
+
     def tweak(self):
         self.__transform()
 
@@ -206,8 +208,9 @@ class DataTweaker(utils.DataLoader):
         self.normalize(norm_factor)
 
     def __transform(self):
-        # Make transformations. Add or remove line as desired
-        self.__expand_horizon()
+        # Make transformations. Only scale if desired
+        if self.__scale:
+            self.__expand_horizon()
         self.__rotate_c()
 
     def __rotate_c(self):
