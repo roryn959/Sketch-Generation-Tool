@@ -278,7 +278,8 @@ class ExplorationWindow:
                     cursor[0],
                     cursor[1],
                     new_cursor[0],
-                    new_cursor[1]
+                    new_cursor[1],
+                    fill='black'
                 )
             cursor = new_cursor
             pen_up = stroke[2]
@@ -563,6 +564,10 @@ class Sketch_Window:
             self.__cursor = None
 
     def __generateExplorationWindow(self):
+        if len(self.__sketch) == 0:
+            print('No sketch strokes made!')
+            return
+
         simplified_sketch_points = DataUtilities.simplify_as_possible(
             self.__sketch,
             self.__modelHandler.getMaxSeqLen()
@@ -580,6 +585,9 @@ class Sketch_Window:
         )
 
     def __generateCompletionWindow(self):
+        if len(self.__sketch)==0:
+            print('No sketch strokes made!')
+            return
         simplified_sketch_points = DataUtilities.simplify_as_possible(
             self.__sketch,
             self.__modelHandler.getMaxSeqLen()/2
